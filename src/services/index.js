@@ -8,6 +8,7 @@
 import { coursesService } from './courses.js';
 import { lmshomeService } from './lmshome.js';
 import { samadService } from './samad.js';
+import { lmsService } from './lms.js';
 
 /** @returns {Record<string, import('./types.js').ServiceAdapter>} */
 export function defaultServices() {
@@ -15,7 +16,8 @@ export function defaultServices() {
     [coursesService.id]: coursesService,
     [lmshomeService.id]: lmshomeService,
     [samadService.id]: samadService,
+    [lmsService.id]: lmsService,
   };
 }
 
-export { coursesService, lmshomeService, samadService };
+export { coursesService, lmshomeService, samadService, lmsService };
