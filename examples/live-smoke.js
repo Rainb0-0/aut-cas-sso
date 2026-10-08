@@ -23,8 +23,11 @@ if (!USER || !PASS) {
 
 const STORE_PATH = process.env.AUT_CAS_SMOKE_STORE || './.aut-cas-sessions.json';
 const logger = createLogger({ level: process.env.AUT_CAS_SMOKE_DEBUG ? 'debug' : 'info' });
-const ok = (label, pass, detail = '') =>
+let failures = 0;
+const ok = (label, pass, detail = '') => {
+  if (!pass) failures++;
   console.log(`${pass ? 'PASS' : 'FAIL'}  ${label}${detail ? ` — ${detail}` : ''}`);
+};
 
 function summarizeCred(cred) {
   if (cred.type === 'token') return `token(${cred.token.length} chars)`;
@@ -145,6 +148,13 @@ async function main() {
     ok('restart: session restored from disk', false, err.message);
   }
   await restarted.stop();
+
+  if (failures > 0) {
+    console.error(`\n${failures} check(s) FAILED`);
+    process.exitCode = 1;
+  } else {
+    console.log('\nall checks passed');
+  }
 }
 
 main().catch((err) => {
