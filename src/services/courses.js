@@ -23,7 +23,7 @@ export const COURSES_SERVICE_URL = `${COURSES_ORIGIN}/login/index.php?authCASatt
  * @returns {boolean}
  */
 export function moodleLooksAuthenticated(res) {
-  if (res.status < 200 || res.status >= 400) return false;
+  if (res.status < 200 || res.status >= 300) return false;
   let u;
   try {
     u = new URL(res.url);

@@ -106,7 +106,7 @@ export const samadService = {
  * @returns {boolean}
  */
 export function samadLooksAuthenticated(res) {
-  if (res.status < 200 || res.status >= 400) return false;
+  if (res.status < 200 || res.status >= 300) return false;
   if (res.url.includes('loginpage.rose')) return false;
   // Anonymous responses embed the container login form; the dashboard does not.
   if (res.text && res.text.includes(LOGIN_MARKER)) return false;

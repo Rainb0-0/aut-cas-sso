@@ -50,11 +50,13 @@ export {
   lmshomeService,
   samadService,
   lmsService,
+  foodService,
 } from './services/index.js';
 export { COURSES_SERVICE_URL, moodleLooksAuthenticated } from './services/courses.js';
 export { LMSHOME_SERVICE_URL } from './services/lmshome.js';
 export { SAMAD_SERVICE_URL, samadLooksAuthenticated } from './services/samad.js';
 export { LMS_U5AUTH, LMS_DDP_URL } from './services/lms.js';
+export { FOOD_SERVICE_URL, foodLooksAuthenticated } from './services/food.js';
 
 // DDP (Meteor) client, exported for advanced consumers
 export { DdpClient, DdpError, DEFAULT_DDP_URL } from './ddp.js';

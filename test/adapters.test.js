@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { coursesService, moodleLooksAuthenticated, COURSES_SERVICE_URL } from '../src/services/courses.js';
 import { lmshomeService, LMSHOME_SERVICE_URL } from '../src/services/lmshome.js';
 import { samadService, samadLooksAuthenticated, SAMAD_SERVICE_URL } from '../src/services/samad.js';
+import { foodService, foodLooksAuthenticated, FOOD_SERVICE_URL } from '../src/services/food.js';
 import { ServiceLoginError } from '../src/errors.js';
 import { CookieJar } from '../src/http.js';
 import { mockFetch } from './helpers/mock.js';
@@ -30,6 +31,7 @@ test('moodleLooksAuthenticated classifies responses', () => {
     'bounced to CAS',
   );
   assert.equal(moodleLooksAuthenticated({ url: 'https://courses.aut.ac.ir/my/', status: 500 }), false);
+  assert.equal(moodleLooksAuthenticated({ url: 'https://courses.aut.ac.ir/my/', status: 302 }), false, '3xx is never success');
 });
 
 test('courses redeem follows the CAS redirect chain and captures cookies', async () => {
@@ -213,6 +215,7 @@ test('samadLooksAuthenticated classifies responses', () => {
   );
   assert.equal(samadLooksAuthenticated({ url: 'https://samad.aut.ac.ir/loginpage.rose', status: 200, text: 'x' }), false);
   assert.equal(samadLooksAuthenticated({ url: 'https://samad.aut.ac.ir/', status: 503, text: '' }), false);
+  assert.equal(samadLooksAuthenticated({ url: 'https://samad.aut.ac.ir/home.rose', status: 302, text: '' }), false, '3xx is never success');
 });
 
 test('samad redeem upgrades insecure redirect targets and needs the marker', async () => {
@@ -289,4 +292,118 @@ test('adapter metadata matches the discovered routes', () => {
   assert.equal(coursesService.requiresCas, true);
   assert.equal(lmshomeService.requiresCas, true);
   assert.equal(samadService.requiresCas, true);
+  assert.equal(foodService.requiresCas, true);
+  assert.equal(foodService.serviceUrl, FOOD_SERVICE_URL);
+  assert.equal(FOOD_SERVICE_URL, 'https://food.aut.ac.ir/Account/CasLogin');
+});
+
+/* ------------------------------------------------------------------ */
+/* food / سامانه تغذیه                                                   */
+/* ------------------------------------------------------------------ */
+
+test('foodLooksAuthenticated only accepts 2xx responses on the food host', () => {
+  assert.equal(foodLooksAuthenticated({ url: 'https://food.aut.ac.ir/UserHome/Index2?bypass=True', status: 200 }), true);
+  assert.equal(
+    foodLooksAuthenticated({ url: 'https://accounts.aut.ac.ir/cas/login?service=https%3A%2F%2Ffood.aut.ac.ir%2F', status: 200 }),
+    false,
+    'CAS bounce means the session is dead',
+  );
+  assert.equal(foodLooksAuthenticated({ url: 'https://food.aut.ac.ir/Home/index', status: 302 }), false);
+});
+
+test('food redeem walks CasLogin -> Home/index -> UserHome -> dashboard', async () => {
+  const { fetch, calls } = mockFetch([
+    {
+      match: (u) => u.pathname === '/Account/CasLogin' && u.searchParams.has('ticket'),
+      respond: () => ({
+        status: 302,
+        headers: {
+          location: '/Home/index',
+          'set-cookie': [
+            'ASP.NET_SessionId=abc123; path=/; HttpOnly; SameSite=Lax; secure',
+            'DGAUTH=D00D; path=/; HttpOnly; SameSite=Lax; secure',
+            'fn=hs=tok&exp=10/8/2026 1:25:18 PM&IdTokenForOAuth2=; path=/; SameSite=None; secure',
+            'ASP.NET_SessionId=; path=/; SameSite=None; secure',
+            '.AspNet.ApplicationCookie=IDENT; path=/; secure; HttpOnly; SameSite=None; secure',
+          ],
+        },
+      }),
+    },
+    { match: (u) => u.pathname === '/Home/index', respond: () => ({ status: 302, headers: { location: '/UserHome' } }) },
+    {
+      match: (u) => u.pathname === '/UserHome',
+      respond: () => ({ status: 302, headers: { location: '/UserHome/Index2?bypass=True' } }),
+    },
+    {
+      match: (u) => u.pathname === '/UserHome/Index2',
+      respond: () => ({ status: 200, body: '<title>صفحه اصلی - سامانه تغذیه</title>' }),
+    },
+  ]);
+
+  const state = await foodService.redeem({ ticket: 'ST-food', fetchImpl: fetch, logger: silent });
+  assert.equal(state.expiresAt, null, 'server-authoritative lifetime');
+  assert.equal(state.cookies['.AspNet.ApplicationCookie'].value, 'IDENT');
+  assert.equal(state.cookies.DGAUTH.value, 'D00D');
+  assert.match(state.cookies.fn.value, /^hs=tok&exp=/, 'fn value keeps its =/& payload');
+  assert.equal(
+    state.cookies['ASP.NET_SessionId']?.value ?? null,
+    '',
+    'the later clear wins: session id ends up empty (session cookie unused)',
+  );
+  assert.equal(state.meta.finalUrl, 'https://food.aut.ac.ir/UserHome/Index2?bypass=True');
+  assert.ok(calls[0].url.includes('ticket=ST-food'));
+});
+
+test('food redeem rejects the 200 error page a replayed ticket produces', async () => {
+  const { fetch } = mockFetch([
+    {
+      match: (u) => u.pathname === '/Account/CasLogin',
+      respond: () => ({ status: 200, body: '<title>سامانه تغذیه-خطا</title>' }),
+    },
+  ]);
+  await assert.rejects(
+    () => foodService.redeem({ ticket: 'ST-used', fetchImpl: fetch, logger: silent }),
+    (err) =>
+      err instanceof ServiceLoginError &&
+      err.service === 'food' &&
+      err.hasIdentity === false &&
+      /did not establish a session/.test(err.message),
+    'a 200 error page without .AspNet.ApplicationCookie must not count as success',
+  );
+});
+
+test('food redeem rejects a bounce into CAS', async () => {
+  const { fetch } = mockFetch([
+    {
+      match: (u) => u.pathname === '/Account/CasLogin',
+      respond: () => ({ status: 302, headers: { location: 'https://accounts.aut.ac.ir/cas/login?service=x' } }),
+    },
+    { match: (u) => u.hostname === 'accounts.aut.ac.ir', respond: () => ({ status: 200, body: '<form id="fm1">' }) },
+  ]);
+  await assert.rejects(
+    () => foodService.redeem({ ticket: 'ST-bad', fetchImpl: fetch, logger: silent }),
+    (err) => err instanceof ServiceLoginError && err.service === 'food',
+  );
+});
+
+test('food probe: dashboard true, CAS bounce false', async () => {
+  const live = mockFetch([
+    {
+      match: (u) => u.pathname === '/Home/index',
+      respond: () => ({ status: 302, headers: { location: '/UserHome' } }),
+    },
+    { match: (u) => u.pathname === '/UserHome', respond: () => ({ status: 302, headers: { location: '/UserHome/Index2?bypass=True' } }) },
+    { match: (u) => u.pathname === '/UserHome/Index2', respond: () => ({ status: 200, body: 'dashboard' }) },
+  ]);
+  assert.equal(await foodService.probe({ state: { cookies: {} }, fetchImpl: live.fetch, logger: silent }), true);
+
+  const dead = mockFetch([
+    {
+      match: (u) => u.pathname === '/Home/index',
+      respond: () => ({ status: 302, headers: { location: '/Account/Login?ReturnUrl=%2f' } }),
+    },
+    { match: (u) => u.pathname === '/Account/Login', respond: () => ({ status: 302, headers: { location: 'https://accounts.aut.ac.ir/cas/login?service=x' } }) },
+    { match: (u) => u.hostname === 'accounts.aut.ac.ir', respond: () => ({ status: 200, body: 'cas login' }) },
+  ]);
+  assert.equal(await foodService.probe({ state: { cookies: {} }, fetchImpl: dead.fetch, logger: silent }), false);
 });
