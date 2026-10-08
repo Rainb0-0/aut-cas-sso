@@ -3,3 +3,5 @@ node_modules/
 *.log
 .env
 .env.*
+# platform-generated conversation transcript (never commit it)
+freebuff-chat-*.md
