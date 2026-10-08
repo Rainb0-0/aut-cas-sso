@@ -1,0 +1,5 @@
+node_modules/
+.aut-cas-sessions.json
+*.log
+.env
+.env.*

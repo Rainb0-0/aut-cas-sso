@@ -1,0 +1,33 @@
+{
+  "name": "aut-cas-sso",
+  "version": "0.1.0",
+  "description": "Reusable CAS SSO session manager for AUT services (courses, lms, lmshome, samad). Raw HTTP, no browser, multi-account, zero dependencies.",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test test/",
+    "smoke": "node examples/live-smoke.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "keywords": [
+    "cas",
+    "sso",
+    "aut",
+    "aut.ac.ir",
+    "session",
+    "moodle",
+    "lms"
+  ],
+  "license": "MIT"
+}
