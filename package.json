@@ -14,7 +14,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test test/",
+    "test": "node --test",
     "smoke": "node examples/live-smoke.js"
   },
   "engines": {
