@@ -13,6 +13,7 @@ invalid, persist across restarts.
 | `courses` | courses.aut.ac.ir (Moodle) | cookies: `MoodleSession`, `MOODLEID1_` (60-day remember), `HAX` |
 | `lmshome` | lmshome.aut.ac.ir (Fararoom) | cookies: `sessionid` (12h, expiry tracked exactly), `csrftoken` |
 | `samad`   | samad.aut.ac.ir (SAMAD) | cookies: `JSESSIONID`, `HASH_JSESSIONID` |
+| `food`    | food.aut.ac.ir (سامانه تغذیه) | cookies: `.AspNet.ApplicationCookie`, `DGAUTH`, `fn` |
 | `lms`     | lms.aut.ac.ir (Nima/Meteor) | `token`: Meteor resume token (~90 days, expiry tracked) |
 
 - ✅ multiple accounts, used concurrently and independently
@@ -72,7 +73,7 @@ const b = await manager.getCredential('lmshome', 'bob'); // independent session
 | `store` | `new FileStore()` | persistence backend; `./.aut-cas-sessions.json` in cwd |
 | `logger` | silent | object with `debug/info/warn/error(message, meta?)` |
 | `encryptionKey` | `process.env.AUT_CAS_SESSION_KEY` | passphrase for stored passwords |
-| `services` | courses/lmshome/samad/lms | adapter registry (bring your own) |
+| `services` | courses/lmshome/samad/lms/food | adapter registry (bring your own) |
 | `cas` | `{ baseUrl: 'https://accounts.aut.ac.ir/cas' }` | plus `tgtTtlMs`, `timeoutMs`, … |
 | `probeIntervalMs` | `300000` | healthy sessions are re-probed at least this often |
 | `expirySafetyMs` | `60000` | refresh this long before a known `expiresAt` |
@@ -151,6 +152,18 @@ headers behind an https load balancer, so every redirect is upgraded
 anonymous responses embed the `j_security_check` login form, the dashboard
 does not.
 
+**food (سامانه تغذیه)** — service URL
+`https://food.aut.ac.ir/Account/CasLogin` (the ASP.NET auth filter sends
+every path through `/Account/Login` into CAS). Redeem walks
+`CasLogin?ticket=…` → `/Home/index` → `/UserHome` →
+`/UserHome/Index2?bypass=True` and collects `.AspNet.ApplicationCookie`
+(the identity cookie), `DGAUTH` and `fn`. A rejected/replayed ticket
+renders a 200 error page *at the food host* instead of bouncing to CAS, so
+success additionally requires the identity cookie and actually entering the
+app. Probe: `GET /Home/index` — dead sessions end on
+`accounts.aut.ac.ir`. All auth cookies are session-scoped with no
+-disclosed lifetime, so validity is probe-based.
+
 **lms (Nima/Meteor)** — no direct CAS hook. The deployment reports
 `settings.auth === "moodle"` and logs in through a custom OAuth provider
 ("u5auth") hosted by Moodle itself:
@@ -187,6 +200,10 @@ service throws `UnsupportedEnvironmentError`; everything else keeps working.
      session and log a warning.
 4. Caller got a 401 from the service itself → `manager.invalidate(...)`,
    next `getCredential()` refetches.
+
+(`lmshome` discloses a 12h cookie lifetime and `lms` a token expiry — both
+track hard expiry; `courses`, `samad` and `food` are server-authoritative
+and rely on probing.)
 
 Concurrent `getCredential()` calls for the same service+account share a
 single fetch (single-flight); CAS TGTs are shared per account with exactly
@@ -253,8 +270,8 @@ const manager = new SessionManager({
 Two platform caveats:
 
 - `Set-Cookie` is not readable by browser `fetch` on cross-origin
-  responses. Cookie-based services (`courses`, `lmshome`, `samad`) need
-  Node, a same-site deployment, or a proxy that surfaces `Set-Cookie`.
+  responses. Cookie-based services (`courses`, `lmshome`, `samad`, `food`)
+  need Node, a same-site deployment, or a proxy that surfaces `Set-Cookie`.
   The `lms` token flow works wherever `fetch` + `WebSocket` exist.
 - The AUT APIs must be reachable (CORS or proxy) from the page.
 
@@ -285,8 +302,8 @@ service's session (that is exactly how `lms` uses `courses`).
 ## Development
 
 ```bash
-npm test        # 63 unit tests, node:test, no network
-npm run smoke   # opt-in live check of all four services
+npm test        # 68 unit tests, node:test, no network
+npm run smoke   # opt-in live check of all five services
 AUT_CAS_USER=… AUT_CAS_PASS=… AUT_CAS_SESSION_KEY=… npm run smoke
 ```
 

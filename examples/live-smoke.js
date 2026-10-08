@@ -6,8 +6,8 @@
  *   AUT_CAS_USER=... AUT_CAS_PASS=... npm run smoke
  *
  * What it proves: CAS login -> service ticket -> session for each of
- * courses/lmshome/samad/lms, an authenticated request with every returned
- * credential, probing, and persistence across a manager restart.
+ * courses/lmshome/samad/lms/food, an authenticated request with every
+ * returned credential, probing, and persistence across a manager restart.
  * Secrets are never printed (only prefixes/lengths).
  */
 
@@ -44,7 +44,7 @@ async function main() {
 
   /* 1. credentials for all four services */
   const creds = {};
-  for (const service of ['courses', 'lmshome', 'samad', 'lms']) {
+  for (const service of ['courses', 'lmshome', 'samad', 'lms', 'food']) {
     try {
       creds[service] = await manager.getCredential(service, 'smoke');
       ok(`${service}: getCredential`, true, summarizeCred(creds[service]));
@@ -95,6 +95,21 @@ async function main() {
   }
 
   try {
+    const cookie = Object.entries(creds.food.cookies)
+      .map(([k, v]) => `${k}=${v}`)
+      .join('; ');
+    const res = await request('https://food.aut.ac.ir/Home/index', {
+      headers: { cookie },
+      maxRedirects: 8,
+    });
+    const landedOnApp = res.ok && new URL(res.url).hostname === 'food.aut.ac.ir';
+    const title = /<title>([^<]+)<\/title>/.exec(res.text)?.[1] ?? '';
+    ok('food: authenticated GET /Home/index', landedOnApp, `final=${res.url} title="${title}"`);
+  } catch (err) {
+    ok('food: authenticated GET /Home/index', false, err.message);
+  }
+
+  try {
     const probe = await manager.probe('lms', 'smoke');
     ok('lms: DDP resume-token probe', probe);
   } catch (err) {
@@ -102,7 +117,7 @@ async function main() {
   }
 
   /* 3. probes for the cookie services */
-  for (const service of ['courses', 'lmshome', 'samad']) {
+  for (const service of ['courses', 'lmshome', 'samad', 'food']) {
     try {
       ok(`${service}: probe`, await manager.probe(service, 'smoke'));
     } catch (err) {
